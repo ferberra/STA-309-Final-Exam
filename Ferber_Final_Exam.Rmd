@@ -1,0 +1,341 @@
+---
+title: "Final Exam"
+author: "Reese Ferber"
+date: "12/9/25"
+output: 
+  prettydoc::html_pretty:
+    toc: true
+    theme: cayman
+    highlight: github
+    code_folding: hide
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,       # Do not show R code
+  message = FALSE,    # Hide messages
+  warning = FALSE,    # Hide warnings
+  results = 'asis'    # Show only outputs/plots
+)
+
+```
+
+## Load Packages
+```{r}
+library(tidyverse)
+library(caret)
+library(readr)
+library(dplyr)
+library(googlesheets4)
+library(janitor)
+library(ggplot2)
+library(randomForest)
+library(rpart)
+library(rpart.plot)
+library(knitr)
+library(kableExtra)
+library(patchwork)
+```
+
+
+## Part 1 - Data Pre-Processing
+
+Load the raw data script using repository directions
+```{r}
+billboard <- read_sheet("https://docs.google.com/spreadsheets/d/1j1AUgtMnjpFTz54UdXgCKZ1i4bNxFjf01ImJ-BqBEt0/edit?gid=1974823090#gid=1974823090", 
+                        sheet = 2, na = c("", "N/A")) %>%
+  clean_names() %>% 
+  dplyr::mutate(song = unlist(song))
+```
+
+
+Create a new table object with only relevant variables.
+```{r }
+music_data <- billboard %>%
+  # Select only relevant columns
+  select(song, 
+         artist, 
+         weeks_at_number_one, 
+         multiple_lead_vocalists, 
+         artist_male, 
+         length_sec, 
+         cover, 
+         explicit, 
+         written_for_a_play, 
+         written_for_a_film, 
+         written_for_a_t_v_show
+         ) %>%
+ 
+   # Rename/Create artist gender variable
+  mutate(artist_gender = case_when(
+    artist_male == 0 ~ "All Female",
+    artist_male == 1 ~ "All Male",
+    artist_male == 2 ~ "Mix Female/Male",
+    artist_male == 3 ~ "Artist contains >1 Non-binary person"
+    )) %>%
+  
+  # Rename lead vocalist quantity category
+  mutate(multiple_lead_vocalists = case_when(
+    multiple_lead_vocalists == 0 ~ "No",
+    multiple_lead_vocalists == 1 ~ "Yes"
+  )) %>%
+  
+  # Rename explicitness category
+  mutate(explicit = case_when(
+    explicit == 0 ~ "No",
+    explicit == 1 ~ "Yes"
+  )) %>%
+ 
+   # Relabel cover category
+  mutate(cover = case_when(
+    cover == 0 ~ "No",
+    cover == 1 ~ "Yes"
+  )) %>%
+  
+  # Debug length_sec column
+  mutate(length_sec = ifelse(is.na(length_sec), median(length_sec, na.rm = TRUE), length_sec)) %>%
+  
+  # Categorize song length by minute categories
+  mutate(length_min = case_when(
+    length_sec <= 120 ~ "< 2 min",
+    length_sec > 120 & length_sec <= 240 ~ "2-4 min",
+    length_sec > 240 & length_sec <= 360 ~ "4-6 min",
+    TRUE ~ "6+ min"
+    )) %>%
+  
+  # Relabel made_for_media category
+  mutate(made_for_media = if_else(
+    (written_for_a_play + written_for_a_film + written_for_a_t_v_show > 0), "Yes", "No")) %>%
+  
+  # Deselect no longer necessary columns
+  select(-artist_male, -written_for_a_play, -written_for_a_film, -written_for_a_t_v_show) %>%
+  
+  # Convert categorical variables to factor
+  mutate(across(c(artist_gender, multiple_lead_vocalists, explicit, cover, made_for_media), as.factor))
+  
+glimpse(music_data)
+
+
+# Response Variable: weeks_at_number_one
+# Predictors: 
+#   1. length_sec
+#   2. cover, 
+#   3. explicit, 
+#   4. artist_gender, 
+#   5. made_for_media
+```
+
+
+
+## Part 2 - Exploratory Data Analysis & Visualization
+
+5 Exploratory Plots
+```{r }
+# 1. Numeric Predictor: length_min vs weeks_at_number_one
+song_length_plot <- ggplot(music_data, aes(x = length_min, y = weeks_at_number_one, fill = length_min)) +
+  stat_summary(fun = "mean", geom = "bar", alpha = 0.8) +
+  stat_summary(fun.data = "mean_se", geom = "errorbar", width = 0.2) +
+  labs(
+    title = "Song Length (in min)",
+    x = "Song Length Category",
+    y = "Avg Weeks at Number One") +
+  annotate("label", x = "< 2 min", y = 1, label = "Less than 2 minute\n long songs are the\n least successful", 
+             fill = "gray90",color = "black", size = 3, hjust = 0.5) +
+  annotate("label", x = "4-6 min", y = 2, label = "Songs that are 4-6 mintues\nin length last the longest\n at number one", 
+             fill = "gray90", color = "black", size = 3, hjust = 0.5) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Save plot
+ggsave("song_length_plot.png", song_length_plot, width = 12, height = 8)
+
+
+# 2. Categorical Predictor: cover vs weeks_at_number_one
+cover_plot <- ggplot(music_data, aes(x = cover, y = weeks_at_number_one, color = cover)) +
+  geom_point(position = position_jitter(width = 0.1), alpha = 0.5) +
+  labs(
+    title = "Cover Status",
+    x = "Cover Song",
+    y = "Weeks at Number One"
+  ) +
+  annotate("label", x = 1.5, y = 15, label = "The majority of songs are originals\n(i.e.songs originally written\nand recorded by the artist)", fill = "gray90", color = "black", size = 2.5, hjust = 0.5) +
+  annotate("label", x = 1.5, y = 5, label = "On average, covers spend\nless time at number one", fill = "gray90", color = "black", size = 2.5, hjust = 0.5) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Save plot
+ggsave("cover_plot.png", cover_plot, width = 12, height = 8)
+
+
+# 3. Categorical Predictor: explicit vs weeks_at_number_one
+explicit_plot <- ggplot(music_data, aes(x = explicit, y = weeks_at_number_one, color = explicit)) +
+  geom_point(position = position_jitter(width = 0.1), alpha = 0.5) +
+  labs(
+    title = "Explicit",
+    x = "Explicit",
+    y = "Weeks at Number One"
+  ) +
+  annotate("label", x = 1.5, y = 7, label = "Despite the majority of songs\nbeing non-explicit, on average,\nthe explicit songs spend\nlonger at number one", fill = "gray90", color = "black", size = 3, hjust = 0.5) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Save plot
+ggsave("explicit_plot.png", explicit_plot, width = 12, height = 8)
+
+
+# 4. Categorical Predictor: artist_gender vs weeks_at_number_one
+artist_gender_plot <- ggplot(music_data, aes(x = artist_gender, y = weeks_at_number_one, color = artist_gender)) +
+  geom_point(position = position_jitter(width = 0.15), alpha = 0.5) +
+  labs(
+    title = "Artist Gender",
+    x = "Artist Gender",
+    y = "Weeks at Number One"
+  ) +
+  annotate("label", x = 1.5, y = 15, label = "Male artists are the most\ncommon and tend to last\nthe longest at number one", fill = "gray90", color = "black", size = 3, hjust = 0) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Save plot
+ggsave("artist_gender_plot.png", artist_gender_plot, width = 12, height = 8)
+
+
+
+# 5. Categorical Predictor: made_for_media vs weeks_at_number_one
+media_plot <- ggplot(music_data, aes(x = made_for_media, y = weeks_at_number_one, color = made_for_media)) +
+  geom_point(position = position_jitter(width = 0.15), alpha = 0.5) +
+  labs(
+    title = "Made-for-Media Status",
+    x = "Made-for-Media",
+    y = "Weeks at Number One"
+  ) +
+  annotate("label", x = 1.5, y = 13, label = "Made-for-media content is\nnot overly popular, however,\nin comparison, the average\ntime at number one is higher", fill = "gray90", color = "black", size = 3, hjust = 0.5) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Save plot
+ggsave("media_plot.png", media_plot, width = 12, height = 8)
+
+```
+
+
+Combine Plots into Dashboard
+```{r }
+
+# song_length_plot
+# cover_plot
+# explicit_plot
+# artist_gender_plot
+# media_plot
+
+my_dashboard <- (song_length_plot + cover_plot + explicit_plot)/(artist_gender_plot + media_plot) +
+  plot_layout(heights = c(2,1.5)) +
+  plot_annotation(title = "What is the Relationship between Song Popularity and...",
+                  subtitle = "How do influential variables affect a song's popularity (measured in Weeks at Number One)?",
+                  caption = "Source: TidyTuesday - Billboard Hot 100 Number Ones")
+my_dashboard
+
+# Save dashboard
+ggsave("dashboard.png", my_dashboard, width = 12, height = 8)
+
+```
+
+
+## Part 3 -Predictive Modeling
+
+Prepare Data
+```{r }
+# Define predictors
+predictors <- c("length_sec", "artist_gender", "multiple_lead_vocalists", "explicit", "cover", "made_for_media")
+
+# Predictors = x
+x <- music_data %>% select(all_of(predictors))
+# Response = y
+y <- music_data$weeks_at_number_one
+
+set.seed(123)
+```
+
+
+Set up 5-fold cross-validation
+```{r }
+ctrl <- trainControl(method = "cv", number = 5)
+
+# Linear Regression
+model_lm_full <- train(weeks_at_number_one ~ ., 
+                       data = music_data[, c(predictors, "weeks_at_number_one")],
+                       method = "lm",
+                       trControl = ctrl)
+model_lm_full
+
+
+# Linear Regression Subset
+model_lm_subset <- train(weeks_at_number_one ~ length_sec + explicit + cover,
+                         data = music_data[, c(predictors, "weeks_at_number_one")],
+                         method = "lm",
+                         trControl = ctrl)
+model_lm_subset
+
+
+# Regression Tree
+model_tree <- train(weeks_at_number_one ~ .,
+                    data = music_data[, c(predictors, "weeks_at_number_one")],
+                    method = "rpart",
+                    trControl = ctrl)
+model_tree
+
+
+# Random Forest
+model_rf <- train(weeks_at_number_one ~ .,
+                  data = music_data[, c(predictors, "weeks_at_number_one")],
+                  method = "rf",
+                  trControl = ctrl)
+model_rf
+
+
+# k-Nearest Neighbors
+model_knn <- train(weeks_at_number_one ~ .,
+                   data = music_data[, c(predictors, "weeks_at_number_one")],
+                   method = "knn",
+                   trControl = ctrl,
+                   preProcess = c("center", "scale"),
+                   tuneLength = 5)
+model_knn
+```
+
+Brief Rationale of Model Choices:
+1. Linear regression: provides a good baseline with full interpretable coefficients.
+2. Linear regression subset: another simple model choice, but shows the interaction with a smaller subset of predictors.
+3. Regression tree: identifies key splits in predictive errors and is easy to visualize.
+4. Random forest: robust model that reduces overfitting and is good for non-linear interactions.
+5. k-NN: non-parametric model option which is sensitive to scaling,
+
+
+
+## Part 4 - Model Comparison 
+
+Collect and Compare Model Results
+```{r }
+results <- resamples(list(
+  Linear_Regression = model_lm_full,
+  Linear_Regression_Subset = model_lm_subset,
+  Regression_Tree = model_tree,
+  Random_Forest = model_rf,
+  kNN = model_knn))
+
+#summary(results)
+
+
+# Visualize performance comparison
+bwplot(results, metric = "RMSE")  # Boxplots of RMSE across 5 folds
+
+
+
+```
+
+Interpret Results:
+After training all 5 models and comparing the RMSE of each, we can tell that the full Linear Regression model provides the most accurate predictions of weeks at number one on average because it is the model with the lowest RMSE (Root Mean Squared Error). By the same logic, the regression tree model provides the least accurate predictions as it has the highest RMSE.
+Although the chosen models gave helpful information in regards to the final analysis, there are a few caveats to the use of certain models. First, tree-based models like the regression tree can overfit the training data leading to higher variance in predictions. Also, Random forest models mitigate overfitting by averaging many trees, which makes it a better model to perform in RMSE. Lastly, k-NN models can be sensitive to scaling if the chosen k is too small, so the choice of k is particularly crucial.
+
+Implications:
+Based on the results of this analysis, we can determine that the songs that are the most statistically likely to last the longest at number one are original, not made-for-media, explicit songs by co-ed bands between 4-6 minutes long. With this knowledge, music production corporations can optimize their profits by pigeon-holing their focus into a particular market of interest.

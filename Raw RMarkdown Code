@@ -307,8 +307,8 @@ bwplot(results, metric = "RMSE")  # Boxplots of RMSE across 5 folds
 ```
 
 Interpret Results:
-
 After training all 5 models and comparing the RMSE of each, we can tell that the full Linear Regression model provides the most accurate predictions of weeks at number one on average because it is the model with the lowest RMSE (Root Mean Squared Error). By the same logic, the regression tree model provides the least accurate predictions as it has the highest RMSE.
-
 Although the chosen models gave helpful information in regards to the final analysis, there are a few caveats to the use of certain models. First, tree-based models like the regression tree can overfit the training data leading to higher variance in predictions. Also, Random forest models mitigate overfitting by averaging many trees, which makes it a better model to perform in RMSE. Lastly, k-NN models can be sensitive to scaling if the chosen k is too small, so the choice of k is particularly crucial.
 
+Implications:
+Based on the results of this analysis, we can determine that the songs that are the most statistically likely to last the longest at number one are original, not made-for-media, explicit songs by co-ed bands between 4-6 minutes long. With this knowledge, music production corporations can optimize their profits by pigeon-holing their focus into a particular market of interest.

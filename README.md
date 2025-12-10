@@ -1,9 +1,11 @@
 # STA-309-Final-Exam
 Final Exam Repository
 
+
 Part 1 - Data Pre-processing
 - Load external music data
 - clean / pre-process variables
+
 
 Part 2 - Exploratory Data Analysis & Visualization
 - 5 exploratory plots
@@ -20,6 +22,7 @@ Part 2 - Exploratory Data Analysis & Visualization
 - Dashboard
     - <img width="3600" height="2400" alt="dashboard" src="https://github.com/user-attachments/assets/6f01c613-e375-44f9-a29b-fb8076b1349b" />
 
+
  
 Part 3 - Predictive Modeling
 - 5 Training models
@@ -29,6 +32,8 @@ Part 3 - Predictive Modeling
     - Random Forest
     - k-Nearest Neighbor
 - Brief rationale of model choices
+
+
 
 Part 4 - Model Comparison
 - Compare models
